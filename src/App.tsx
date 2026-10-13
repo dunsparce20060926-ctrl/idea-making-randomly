@@ -3,6 +3,7 @@ import { BoxDetailView } from './views/BoxDetailView'
 import { BoxesView } from './views/BoxesView'
 import { GenerateView } from './views/GenerateView'
 import { GrainsView } from './views/GrainsView'
+import { SavedView } from './views/SavedView'
 
 const tabs = [
   { id: 'generate', label: '生成' },
@@ -16,7 +17,6 @@ type TabId = (typeof tabs)[number]['id']
 export default function App() {
   const [tab, setTab] = useState<TabId>('generate')
   const [openBoxId, setOpenBoxId] = useState<string | null>(null)
-  const current = tabs.find((t) => t.id === tab)!
 
   const selectTab = (id: TabId) => {
     setTab(id)
@@ -35,7 +35,7 @@ export default function App() {
   } else if (tab === 'grains') {
     content = <GrainsView />
   } else {
-    content = <p className="text-slate-500">「{current.label}」画面は準備中です。</p>
+    content = <SavedView onOpenInGenerate={() => selectTab('generate')} />
   }
 
   return (

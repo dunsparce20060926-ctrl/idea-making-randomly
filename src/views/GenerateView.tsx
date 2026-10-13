@@ -2,28 +2,9 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useState } from 'react'
 import { db } from '../db'
 import { generate, type SlotError } from '../generate'
+import { type KeyedSlot, emptySlot, loadSlots, storeSlots } from '../slotStorage'
+import { saveIdea } from '../store'
 import type { Box, Slot } from '../types'
-
-const STORAGE_KEY = 'idea-app:slots'
-
-/** 画面上でスロットを並べ替えても状態が混ざらないよう、表示用のキーを持たせる */
-type KeyedSlot = Slot & { key: string }
-
-const emptySlot = (): KeyedSlot => ({ key: crypto.randomUUID(), boxId: null, grainId: null, anchored: false })
-
-function loadSlots(): KeyedSlot[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length > 0)
-        return parsed.map((s: Slot) => ({ ...s, key: crypto.randomUUID() }))
-    }
-  } catch {
-    // 読み込めなければ初期状態で始める
-  }
-  return [emptySlot(), emptySlot()]
-}
 
 const ERROR_TEXT: Record<SlotError, string> = {
   'empty-box': 'この箱には粒がありません',
@@ -33,6 +14,9 @@ const ERROR_TEXT: Record<SlotError, string> = {
 export function GenerateView() {
   const [slots, setSlots] = useState<KeyedSlot[]>(loadSlots)
   const [errors, setErrors] = useState<(SlotError | null)[]>([])
+  const [saving, setSaving] = useState(false)
+  const [memo, setMemo] = useState('')
+  const [savedMessage, setSavedMessage] = useState('')
   const boxes = useLiveQuery(() => db.boxes.orderBy('name').toArray(), [])
   const grainIds = slots.map((s) => s.grainId).filter((id): id is string => !!id)
   const grainTexts = useLiveQuery(async () => {
@@ -40,16 +24,23 @@ export function GenerateView() {
     return new Map(list.filter((g) => g !== undefined).map((g) => [g.id, g.text]))
   }, [grainIds.join(',')])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(slots))
-    } catch {
-      // 保存できなくても動作は続ける
-    }
-  }, [slots])
+  useEffect(() => storeSlots(slots), [slots])
+
+  const resetSave = () => {
+    setSaving(false)
+    setSavedMessage('')
+  }
+
+  const save = async () => {
+    await saveIdea(slots, memo)
+    setMemo('')
+    setSaving(false)
+    setSavedMessage('保存しました')
+  }
 
   const update = (i: number, slot: Slot) => {
     setSlots(slots.map((s, j) => (j === i ? { ...slot, key: s.key } : s)))
+    resetSave()
     setErrors([])
   }
 
@@ -59,11 +50,13 @@ export function GenerateView() {
     const next = [...slots]
     ;[next[i], next[j]] = [next[j], next[i]]
     setSlots(next)
+    resetSave()
     setErrors([])
   }
 
   const remove = (i: number) => {
     setSlots(slots.filter((_, j) => j !== i))
+    resetSave()
     setErrors([])
   }
 
@@ -75,6 +68,7 @@ export function GenerateView() {
     })
     const result = generate(slots, boxGrainIds)
     setSlots(result.slots as KeyedSlot[])
+    resetSave()
     setErrors(result.errors)
   }
 
@@ -84,6 +78,7 @@ export function GenerateView() {
   }
 
   const anchoredCount = slots.filter((s) => s.anchored).length
+  const complete = slots.length > 0 && slots.every((s) => s.grainId)
 
   return (
     <div className="space-y-3">
@@ -111,13 +106,41 @@ export function GenerateView() {
         + スロットを追加
       </button>
 
-      <div className="sticky bottom-14 bg-white pt-2">
+      {saving && (
+        <div className="space-y-2 rounded-lg border bg-slate-50 p-3">
+          <textarea
+            autoFocus
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            rows={3}
+            placeholder="メモ（思いついたこと、使い道など。空でも保存できます）"
+            className="w-full rounded border bg-white px-3 py-2"
+          />
+          <div className="flex gap-2">
+            <button onClick={save} className="flex-1 rounded bg-emerald-600 py-2 font-bold text-white">
+              保存する
+            </button>
+            <button onClick={() => setSaving(false)} className="rounded border px-4 py-2">
+              やめる
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="sticky bottom-14 flex gap-2 bg-white pt-2">
         <button
           onClick={run}
           disabled={slots.length === 0 || anchoredCount === slots.length}
-          className="w-full rounded-lg bg-indigo-600 py-3 text-lg font-bold text-white disabled:opacity-40"
+          className="flex-1 rounded-lg bg-indigo-600 py-3 text-lg font-bold text-white disabled:opacity-40"
         >
           {anchoredCount > 0 ? `固定以外を引き直す（${slots.length - anchoredCount}）` : '生成'}
+        </button>
+        <button
+          onClick={() => setSaving(true)}
+          disabled={!complete || saving}
+          className="rounded-lg border-2 border-emerald-600 px-4 font-bold text-emerald-700 disabled:opacity-40"
+        >
+          {savedMessage || '保存'}
         </button>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { db, newId } from './db'
-import type { Box, Grain } from './types'
+import type { Box, Grain, SavedIdea, Slot } from './types'
 
 export const BOX_COLORS = [
   '#6366f1',
@@ -112,4 +112,53 @@ export async function putGrainInBox(boxId: string, grainId: string) {
 
 export async function removeGrainFromBox(boxId: string, grainId: string) {
   await db.boxGrains.delete([boxId, grainId])
+}
+
+// ---- 保存した組み合わせ ----
+
+/** 組み合わせを保存する。粒の文字列も控えておき、後で粒が編集・削除されても読めるようにする */
+export async function saveIdea(slots: Slot[], memo: string): Promise<SavedIdea> {
+  const grainIds = slots.map((s) => s.grainId).filter((id): id is string => !!id)
+  const grains = new Map((await db.grains.bulkGet(grainIds)).filter((g) => g !== undefined).map((g) => [g.id, g.text]))
+  const now = Date.now()
+  const idea: SavedIdea = {
+    id: newId(),
+    slots: slots.map(({ boxId, grainId, anchored }) => ({
+      boxId,
+      grainId,
+      anchored,
+      grainTextSnapshot: grainId ? grains.get(grainId) : undefined,
+    })),
+    memo: memo.trim(),
+    createdAt: now,
+    updatedAt: now,
+  }
+  await db.savedIdeas.add(idea)
+  return idea
+}
+
+export async function updateIdeaMemo(id: string, memo: string) {
+  await db.savedIdeas.update(id, { memo: memo.trim(), updatedAt: Date.now() })
+}
+
+export async function deleteIdea(id: string) {
+  await db.savedIdeas.delete(id)
+}
+
+/**
+ * 保存した組み合わせを生成画面に戻すためのスロットを作る。
+ * 削除済みの粒は外してスロットを空にする。箱だけが削除されていれば、粒を直接指定した固定スロットにする。
+ */
+export async function slotsForRestore(idea: SavedIdea): Promise<Slot[]> {
+  const out: Slot[] = []
+  for (const s of idea.slots) {
+    const grain = s.grainId ? await db.grains.get(s.grainId) : undefined
+    const box = s.boxId ? await db.boxes.get(s.boxId) : undefined
+    out.push({
+      boxId: box ? box.id : null,
+      grainId: grain ? grain.id : null,
+      anchored: grain ? (box ? s.anchored : true) : false,
+    })
+  }
+  return out
 }
