@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BoxDetailView } from './views/BoxDetailView'
 import { BoxesView } from './views/BoxesView'
+import { GenerateView } from './views/GenerateView'
 import { GrainsView } from './views/GrainsView'
 
 const tabs = [
@@ -13,7 +14,7 @@ const tabs = [
 type TabId = (typeof tabs)[number]['id']
 
 export default function App() {
-  const [tab, setTab] = useState<TabId>('boxes')
+  const [tab, setTab] = useState<TabId>('generate')
   const [openBoxId, setOpenBoxId] = useState<string | null>(null)
   const current = tabs.find((t) => t.id === tab)!
 
@@ -29,6 +30,8 @@ export default function App() {
     ) : (
       <BoxesView onOpen={setOpenBoxId} />
     )
+  } else if (tab === 'generate') {
+    content = <GenerateView />
   } else if (tab === 'grains') {
     content = <GrainsView />
   } else {
